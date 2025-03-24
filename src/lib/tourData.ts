@@ -1,4 +1,3 @@
-
 import { StaticImageData } from "next/image";
 
 // These would be actual imported images in a real app
