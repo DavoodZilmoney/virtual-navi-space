@@ -8,7 +8,7 @@ interface HotspotProps {
   hotspot: HotspotType;
   onClick: (hotspot: HotspotType) => void;
   isActive: boolean;
-  style?: React.CSSProperties; // Add style prop
+  style?: React.CSSProperties;
 }
 
 const Hotspot = ({ hotspot, onClick, isActive, style }: HotspotProps) => {
@@ -35,7 +35,7 @@ const Hotspot = ({ hotspot, onClick, isActive, style }: HotspotProps) => {
         isActive ? "scale-110" : "scale-100",
         "hotspot-pulse" // Adds pulsing animation
       )}
-      style={style} // Apply style prop
+      style={style}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={() => onClick(hotspot)}

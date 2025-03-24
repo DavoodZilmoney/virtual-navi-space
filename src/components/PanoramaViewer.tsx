@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Scene as TourScene, Hotspot as HotspotType } from '@/lib/tourData';
@@ -7,7 +6,6 @@ import Hotspot from './Hotspot';
 import NavigationControls from './NavigationControls';
 import InfoPanel from './InfoPanel';
 import MiniMap from './MiniMap';
-import SceneSelector from './SceneSelector';
 import { usePanorama } from '@/hooks/usePanorama';
 
 interface PanoramaViewerProps {
@@ -36,6 +34,7 @@ const PanoramaViewer = ({ initialSceneId, scenes }: PanoramaViewerProps) => {
   const {
     currentScene,
     isTransitioning,
+    transitionStage,
     activeHotspot,
     isInfoPanelOpen,
     navigateToScene,
@@ -94,10 +93,10 @@ const PanoramaViewer = ({ initialSceneId, scenes }: PanoramaViewerProps) => {
     const animate = () => {
       requestAnimationFrame(animate);
       
-      if (!isUserInteractingRef.current) {
-        // Very slight automatic rotation for subtle movement
-        lonRef.current += 0.03;
-      }
+      // Disabled auto-rotation as requested
+      // if (!isUserInteractingRef.current) {
+      //   lonRef.current += 0.03;
+      // }
       
       // Constrain vertical view (prevent upside down views)
       latRef.current = Math.max(-85, Math.min(85, latRef.current));
@@ -238,24 +237,69 @@ const PanoramaViewer = ({ initialSceneId, scenes }: PanoramaViewerProps) => {
         console.error('Error loading panorama texture:', error);
       }
     );
+  }, [currentScene, isTransitioning]);
+  
+  // Handle transition zoom effect
+  useEffect(() => {
+    if (!cameraRef.current || !isTransitioning) return;
     
-    // Fade out current panorama when transitioning
-    if (isTransitioning && sphereRef.current) {
-      const material = sphereRef.current.material as THREE.MeshBasicMaterial;
+    if (transitionStage === 'zoom-in') {
+      // Zoom in effect to simulate forward movement
+      const zoomIn = () => {
+        if (!cameraRef.current || transitionStage !== 'zoom-in') return;
+        
+        if (cameraRef.current.fov > 50) {
+          cameraRef.current.fov -= 0.5;
+          cameraRef.current.updateProjectionMatrix();
+          requestAnimationFrame(zoomIn);
+        }
+      };
       
+      zoomIn();
+    } else if (transitionStage === 'change-scene') {
+      // Reset FOV when changing scene
+      cameraRef.current.fov = 75;
+      cameraRef.current.updateProjectionMatrix();
+    }
+  }, [transitionStage, isTransitioning]);
+  
+  // Handle transition opacity effect
+  useEffect(() => {
+    if (!sphereRef.current || !isTransitioning) return;
+    
+    const material = sphereRef.current.material as THREE.MeshBasicMaterial;
+    
+    if (transitionStage === 'zoom-in') {
+      // Fade out current panorama during zoom-in
       const fadeOut = () => {
-        if (!sphereRef.current) return;
+        if (!sphereRef.current || transitionStage !== 'zoom-in') return;
         const material = sphereRef.current.material as THREE.MeshBasicMaterial;
         
-        if (material.opacity > 0) {
+        if (material.opacity > 0.4) {
           material.opacity -= 0.05;
           requestAnimationFrame(fadeOut);
         }
       };
       
       fadeOut();
+    } else if (transitionStage === 'change-scene') {
+      // Keep the opacity low during scene change
+      material.opacity = 0.3;
+    } else if (transitionStage === 'none' && !isTransitioning) {
+      // Fade in new panorama
+      const fadeIn = () => {
+        if (!sphereRef.current) return;
+        const material = sphereRef.current.material as THREE.MeshBasicMaterial;
+        
+        if (material.opacity < 1) {
+          material.opacity += 0.05;
+          requestAnimationFrame(fadeIn);
+        }
+      };
+      
+      fadeIn();
     }
-  }, [currentScene, isTransitioning]);
+  }, [transitionStage, isTransitioning]);
   
   // Handle zoom in
   const handleZoomIn = () => {
@@ -373,14 +417,54 @@ const PanoramaViewer = ({ initialSceneId, scenes }: PanoramaViewerProps) => {
     );
   };
 
+  // Filter hotspots to only show the ones closest to current view
+  const getVisibleHotspots = () => {
+    if (!currentScene || !cameraRef.current) return [];
+    
+    const visibleHotspots = currentScene.hotspots.filter(hotspot => {
+      const position = getHotspotPosition(hotspot);
+      return isHotspotVisible(position);
+    });
+    
+    // Calculate current camera direction
+    const phi = THREE.MathUtils.degToRad(90 - latRef.current);
+    const theta = THREE.MathUtils.degToRad(lonRef.current);
+    
+    const cameraDirection = new THREE.Vector3(
+      Math.sin(phi) * Math.cos(theta),
+      Math.cos(phi),
+      Math.sin(phi) * Math.sin(theta)
+    );
+    
+    // Sort hotspots by distance to camera's view direction
+    return visibleHotspots.sort((a, b) => {
+      const aPos = a.position;
+      const bPos = b.position;
+      
+      const aDir = new THREE.Vector3(
+        Math.sin(aPos.phi) * Math.cos(aPos.theta),
+        Math.cos(aPos.phi),
+        Math.sin(aPos.phi) * Math.sin(aPos.theta)
+      );
+      
+      const bDir = new THREE.Vector3(
+        Math.sin(bPos.phi) * Math.cos(bPos.theta),
+        Math.cos(bPos.phi),
+        Math.sin(bPos.phi) * Math.sin(bPos.theta)
+      );
+      
+      const aDot = cameraDirection.dot(aDir);
+      const bDot = cameraDirection.dot(bDir);
+      
+      return bDot - aDot;
+    }).slice(0, 3); // Only show the 3 most relevant hotspots
+  };
+
   return (
     <div className="panorama-wrapper w-full h-screen" ref={containerRef}>
       {/* Render hotspots if scene is loaded and not transitioning */}
-      {currentScene && !isTransitioning && currentScene.hotspots.map(hotspot => {
+      {currentScene && !isTransitioning && getVisibleHotspots().map(hotspot => {
         const position = getHotspotPosition(hotspot);
-        const visible = isHotspotVisible(position);
-        
-        if (!visible) return null;
         
         return (
           <Hotspot
@@ -395,14 +479,6 @@ const PanoramaViewer = ({ initialSceneId, scenes }: PanoramaViewerProps) => {
           />
         );
       })}
-      
-      {/* Scene selector */}
-      <SceneSelector
-        scenes={scenes}
-        currentSceneId={currentScene?.id || initialSceneId}
-        onSceneSelect={navigateToScene}
-        onToggleMap={() => setIsMapOpen(!isMapOpen)}
-      />
       
       {/* Mini map */}
       <MiniMap
@@ -420,6 +496,7 @@ const PanoramaViewer = ({ initialSceneId, scenes }: PanoramaViewerProps) => {
         onToggleFullscreen={handleToggleFullscreen}
         onRotate={handleRotate}
         isFullscreen={isFullscreen}
+        onToggleMap={() => setIsMapOpen(!isMapOpen)}
       />
       
       {/* Info panel */}
@@ -433,7 +510,7 @@ const PanoramaViewer = ({ initialSceneId, scenes }: PanoramaViewerProps) => {
       <div
         className={cn(
           "absolute inset-0 bg-black pointer-events-none transition-opacity duration-500",
-          isTransitioning ? "opacity-100" : "opacity-0"
+          isTransitioning ? "opacity-30" : "opacity-0"
         )}
       />
     </div>

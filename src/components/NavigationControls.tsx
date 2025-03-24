@@ -12,6 +12,7 @@ interface NavigationControlsProps {
   onReset: () => void;
   onToggleFullscreen: () => void;
   onRotate: (direction: 'up' | 'down' | 'left' | 'right') => void;
+  onToggleMap: () => void;
   isFullscreen: boolean;
 }
 
@@ -21,6 +22,7 @@ const NavigationControls = ({
   onReset,
   onToggleFullscreen,
   onRotate,
+  onToggleMap,
   isFullscreen
 }: NavigationControlsProps) => {
   const [expanded, setExpanded] = useState(true);
@@ -63,6 +65,14 @@ const NavigationControls = ({
             ) : (
               <Maximize className="h-5 w-5 text-gray-700" />
             )}
+          </button>
+          
+          <button 
+            onClick={onToggleMap} 
+            className="control-button"
+            aria-label="Toggle Map"
+          >
+            <MapPin className="h-5 w-5 text-gray-700" />
           </button>
         </div>
       )}
